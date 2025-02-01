@@ -1,0 +1,64 @@
+import json
+import boto3
+import urllib.parse
+
+# אתחול לקוחות AWS
+s3 = boto3.client('s3')
+textract = boto3.client('textract')
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('OCRResults')
+
+def lambda_handler(event, context):
+    # קבלת פרטי הקובץ שהועלה
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'])
+    
+    print(f"Processing file from S3: Bucket={bucket}, Key={key}")
+
+    # קריאה לשירות Amazon Textract
+    try:
+        response = textract.detect_document_text(Document={'S3Object': {'Bucket': bucket, 'Name': key}})
+        print(f"Textract response received")  # הודעה כללית
+        
+        # בדיקה אם קיימים "Blocks" בתשובה
+        if 'Blocks' not in response:
+            print("No blocks found in Textract response")
+            return {
+                'statusCode': 200,
+                'body': json.dumps(f'No blocks found in the document: {key}')
+            }
+        
+        # הפקת טקסט מתוך הפלט של Textract
+        extracted_text = " ".join([block["Text"] for block in response["Blocks"] if block["BlockType"] == "LINE"])
+        
+        # אם אין טקסט, נדפיס הודעה
+        if not extracted_text.strip():
+            print(f"No text extracted from the document: {key}")
+            return {
+                'statusCode': 200,
+                'body': json.dumps(f'No text found in the document: {key}')
+            }
+        
+        # לוג לפני שמירה ב-DynamoDB
+        print(f"Extracted text: {extracted_text[:200]}...")  # מציג את 200 התווים הראשונים
+
+        # שמירת הנתונים בטבלת DynamoDB
+        table.put_item(
+            Item={
+                'image_name': key,
+                'extracted_text': extracted_text[:40000]  # חיתוך למקסימום של DynamoDB (400KB ≈ 40,000 תווים)
+            }
+        )
+        print(f"Data saved to DynamoDB: {key}")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps(f'Text extracted and saved to DynamoDB')
+        }
+    
+    except Exception as e:
+        print(f"Error processing document {key}: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f"Error extracting text from document {key}: {str(e)}")
+        }
