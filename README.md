@@ -38,5 +38,5 @@ Before deploying, ensure you have:
 1. **Clone this repository**:
 
    ```bash
-   git clone https://github.com/yourusername/ocr-file-processing.git
-   cd ocr-file-processing
+   git clone https://github.com/idan5353/TextReco.git
+  
